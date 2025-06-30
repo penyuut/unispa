@@ -6,16 +6,31 @@ if (!isset($_SESSION['trainee'])) {
 }
 
 $traineeID = $_SESSION['trainee']['trainee_id'] ?? null;
-
 $conn = new mysqli("localhost", "root", "", "unispa");
+
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
+
+$today = date('Y-m-d');
 
 // Handle attendance submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     foreach ($_POST['attendance'] as $workshopId => $status) {
         if ($status !== '') {
+            // Ensure the workshop is scheduled for today
+            $dateCheck = $conn->prepare("SELECT date FROM workshop WHERE workshop_id = ?");
+            $dateCheck->bind_param("s", $workshopId);
+            $dateCheck->execute();
+            $dateResult = $dateCheck->get_result();
+            $workshop = $dateResult->fetch_assoc();
+            $dateCheck->close();
+
+            if (!$workshop || $workshop['date'] !== $today) {
+                continue; // Skip if not today
+            }
+
+            // Avoid duplicate entries
             $check = $conn->prepare("SELECT * FROM attendance WHERE trainee_id = ? AND workshop_id = ?");
             $check->bind_param("ss", $traineeID, $workshopId);
             $check->execute();
@@ -30,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $check->close();
         }
     }
+
     echo "<script>alert('Attendance submitted!');window.location.href='trainee-attendance.php';</script>";
     exit();
 }
@@ -43,7 +59,7 @@ $workshops = $conn->query("
     ORDER BY date ASC
 ");
 
-// Workshops already marked (present or absent)
+// Already attended workshops
 $stmt = $conn->prepare("
     SELECT w.date, w.title, w.description, w.location, a.status 
     FROM attendance a 
@@ -64,14 +80,12 @@ $stmt->close();
   <title>Trainee Attendance | UniSpa</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet">
-  
   <style>
     body {
       font-family: 'Source Sans Pro', sans-serif;
       background: linear-gradient(to right, #e9e4f0, #d3cce3);
       padding: 40px;
     }
-
     .container {
       max-width: 1000px;
       margin: auto;
@@ -80,34 +94,28 @@ $stmt->close();
       border-radius: 20px;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
     }
-
     h1, h2 {
       text-align: center;
       color: #4B0082;
     }
-
     table {
       width: 100%;
       border-collapse: collapse;
       margin-bottom: 25px;
     }
-
     table th, table td {
       padding: 12px;
       border: 1px solid #ccc;
       text-align: left;
     }
-
     table th {
       background-color: #f3f0fa;
     }
-
     select {
       padding: 8px;
       border-radius: 8px;
       border: 1px solid #ccc;
     }
-
     .submit-btn {
       background: #4B0082;
       color: white;
@@ -120,9 +128,16 @@ $stmt->close();
       display: block;
       margin: 0 auto 40px;
     }
-
     .submit-btn:hover {
       background-color: #6a0dad;
+    }
+    .back-link {
+      text-align: center;
+      margin-top: 20px;
+      display: block;
+      color: #4B0082;
+      font-weight: bold;
+      text-decoration: none;
     }
   </style>
 </head>
@@ -149,11 +164,15 @@ $stmt->close();
                 <td><?= htmlspecialchars($w['description']) ?></td>
                 <td><?= htmlspecialchars($w['location']) ?></td>
                 <td>
-                  <select name="attendance[<?= $w['workshop_id'] ?>]">
-                    <option value="">-- Select --</option>
-                    <option value="Present">Present</option>
-                    <option value="Absent">Absent</option>
-                  </select>
+                  <?php if ($w['date'] === $today): ?>
+                    <select name="attendance[<?= $w['workshop_id'] ?>]">
+                      <option value="">-- Select --</option>
+                      <option value="Present">Present</option>
+                      <option value="Absent">Absent</option>
+                    </select>
+                  <?php else: ?>
+                    <em>Attendance only available on <?= $w['date'] ?></em>
+                  <?php endif; ?>
                 </td>
               </tr>
             <?php endwhile; ?>
@@ -194,7 +213,8 @@ $stmt->close();
         <?php endif; ?>
       </tbody>
     </table>
-<a href="trainee-dashboard.php" class="back-link">&larr; Back to Dashboard</a>
+
+    <a href="trainee-dashboard.php" class="back-link">&larr; Back to Dashboard</a>
   </div>
 </body>
 </html>
