@@ -1,0 +1,6 @@
+CREATE TABLE trainee_attendance (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  trainee_id INT NOT NULL,           -- you can change this to match your trainee table
+  session_id INT NOT NULL,           -- matches the checkbox values
+  date_marked TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
